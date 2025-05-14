@@ -1,34 +1,54 @@
 %YAML 1.2
 
 ---
-name: Z80 Family Assembly
+name: Z80/Z180 Assembly
 uuid: EDE7FFE3-F4DD-4BE1-94D9-ED7F973D2237
-file_extensions: [asm, ASM, s, S, inc, INC, z80, Z80, rasm]
+file_extensions: [asm, ASM, s, S, inc, INC, z80, Z80]
 scope: source.z80
 
 variables:
 
-  regs: '([A-IL|(BC)|(DE)|(HL)|(IX)|(IY)|(SP)])'
+  # Registers vars
+
+  regs: '(A|B|C|D|E|H|L|AF|BC|DE|HL|IX|IY|SP)'
   
-  address: '(?:&[HX][\da-fA-F]{4}|[$#&][\da-fA-F]{4}|\b0[Xa-fA-F][\da-fA-F]{4}H|\b[\d]{4}H|[\d]{4,5}D)\b'
+  regs8: '(A|B|C|D|E|H|L)'
   
+  regs16: '(AF|BC|DE|HL|IX|IY|SP)'
+  
+  reg_ptr: '(\((HL|IX|IY)\))' 
+
+  reg_ptr_hl: '(\(HL\))'
+
+  # Numbers
+
   binary: '(?:%[01]+|[01]+[bB])'
   
   octal: '(?:&O[0-7]+|[0-7]+[OQ])'
   
-  decimal: '(?:[0-9]+|[0-9]D)'
+  decimal: '(?:[0-9]+[dD]?)'
   
-  hexidecimal: '(?:((0x|#|&|\$)[0-9a-fA-F]+)|\b([0-9a-fA-F]+[hH]))\b'
+  hexidecimal: '(?:((0x|#|&|\$)[0-9a-fA-F]+)|([0-9a-fA-F]+[hH]))'
 
-  number: '(?:{{binary}}|{{octal}}|{{hexidecimal}}|{{decimal}})'
+  number: '(?:{{decimal}}|{{binary}}|{{octal}}|{{hexidecimal}})'
+
+  address: '(?:{{number}})'
   
-  comment: '(?:;.+)'
-  
-  conditionals: '(?i)\b(?:NC|NZ|PE|PO|C|M|P|Z)\b'
-  
-  label: '\b[_a-zA-Z\.][_a-zA-Z0-9\.]*[_a-zA-Z0-9\.]\b'
+  # Labels
+
+  label: '\b[_a-zA-Z][_a-zA-Z0-9]*[_a-zA-Z0-9]\b'
   
   label_multi: '{{label}}(?:[~&^|+-]{{label}})*'
+
+  # Flags
+
+  conditionals: '(?i)\b(?:NC|NZ|PE|PO|C|M|P|Z)\b'
+
+  # Other
+
+  comma: '\s*,\s*'
+
+  comment: '(?:;.+)'
 
 contexts:
   # The prototype context is prepended to all contexts but those setting
@@ -52,64 +72,251 @@ contexts:
 
   registers:
     - match: '(?i)\b(AF|BC|DE|HL)'''
-      comment: '16-bit shadow registers (note: escaped single quote)'
       scope: variable.other.z80
-    - match: '(?i)\b(AF|BC|DE|HL|PC|SP|IX|IY)\b'
-      comment: '16-bit registers'
+    
+    - match: '(?i)\b{{regs16}}\b'
       scope: variable.other.z80
-    - match: '(?i)\(\s?(AF|BC|DE|HL|SP|IX|IY|{{number}}|{{label}})(?:\s?[+-]?\s?{{number}})?\s?\)'
-      comment: 'Pointer to 16-bit register/address (incl. offsets)'
+    
+    - match: '(?i)\(\s?({{regs16}}|{{number}}|{{label}})(?:\s?[+-]?\s?{{number}})?\s?\)'
       scope: variable.parameter.z80
-    - match: '(?i)\b(HX|HY|LX|LY)\b'
-      comment: 'Undocumented 8-bit registers'
+    
+    - match: '(?i)\b(IXH|IHL|IYH|IYL)\b'
       scope: variable.other.z80
+    
     - match: '(?i)\b([ABCDEFHILR]|IXH|IXL|IYH|IYL|LX|LY|YL|YH)\b'
-      comment: '8-bit registers'
       scope: variable.other.z80
 
+  # ****************************************
+  # *** Mnemonics or set of instructions ***
+  # ****************************************
+
   opcodes:
-    
-    - match: '(?i)\b(CALL|JP|JR|DJNZ)\s+({{conditionals}}), ?({{address}}|{{label}})\b'
-      comment: 'Calls and jumps, with a condition'
+
+    # Jumping, calling and unconditional cycles
+
+    - match: '(?i)\b(JP|JR|CALL|DJNZ)\s+({{address}})\b'
+      captures:
+        1: keyword.control.z80
+        2: constant.numeric.z80
+
+    - match: '(?i)\b(JP|JR|CALL|DJNZ)\s+({{label}})\b'
+      captures:
+        1: keyword.control.z80
+        2: variable.function.z80
+
+    # Conditional jumps
+
+    - match: '(?i)\b(JP|JR)\s+({{conditionals}}){{comma}}({{address}})\b'
+      captures:
+        1: keyword.control.z80
+        2: keyword.control.conditional.z80
+        3: constant.numeric.z80
+
+    - match: '(?i)\b(JP|JR)\s+({{conditionals}}){{comma}}({{label}})\b'
       captures:
         1: keyword.control.z80
         2: keyword.control.conditional.z80
         3: variable.function.z80
-    
-    - match: '(?i)\b(CALL|JP|JR|DJNZ)\s+({{address}}|{{label}})\b'
+
+    # Conditional calls
+
+    - match: '(?i)\b(CALL)\s+({{conditionals}}){{comma}}({{label}})\b'
       captures:
         1: keyword.control.z80
-        2: variable.function.z80
+        2: keyword.control.conditional.z80
+        3: variable.function.z80
+
+    - match: '(?i)\b(CALL)\s+({{conditionals}}){{comma}}({{address}})\b'
+      captures:
+        1: keyword.control.z80
+        2: keyword.control.conditional.z80
+        3: constant.numeric.z80
     
-    - match: '(?i)\b(JP)\s+(\((HL|IX|IY)\))'
-      comment: 'Jumps using 16-bit registers'
+    # Jumps with pointers
+    
+    - match: '(?i)\b(JP)\s+({{reg_ptr}})'
       captures:
         1: keyword.control.z80
         2: variable.parameter.z80
     
-    - match: '(?i)\b(RET)(\s+{{conditionals}})?\b'
-      comment: 'RETurn, with an optional condition'
+    # Return and conditional return
+
+    - match: '(?i)\b(RET)(\s+{{conditionals}})*\b'
       captures:
         1: keyword.control.z80
         2: keyword.control.conditional.z80
 
-    - match: '(?i)\b(RST)(\s)+(?:({{number}})|({{label}}))\b'
+    # Reset instruction
+
+    - match: '(?i)\b(RST)\s+({{number}})\b'
       captures:
         1: keyword.control.z80
-        2: constant.numeric
-        3: variable.function.z80
+        2: constant.numeric.z80
 
-    - match: '(?i)\b(CP)\s*(?:({{number}})|({{label}})|({{regs}}))\b'
+    - match: '(?i)\b(RST)\s+({{label}})\b'
       captures:
         1: keyword.control.z80
-        2: constant.numeric
+        2: variable.parameter.z80
+
+    # Push and pop instructions
+
+    - match: '(?i)\b(PUSH|POP)\s+({{regs16}})\b'
+      captures:
+        1: keyword.control.z80
+        2: variable.other.z80
+
+    # Comparison instruction
+
+    - match: '(?i)(CP|CPL|CPI|CPD|CPIR|CPDR)'
+      scope: keyword.control.z80
+
+    - match: '(?i)\b(CP)\s+({{regs8}})\b'
+      captures:
+        1: keyword.control.z80
+        2: variable.other.z80
+
+    - match: '(?i)\b(CP)\s+({{reg_ptr_hl}})\b'
+      captures:
+        1: keyword.control.z80
+        2: variable.other.z80
+
+    - match: '(?i)\b(CP)\s+({{number}})\b'
+      captures:
+        1: keyword.control.z80
+        2: constant.numeric.z80
+    
+    - match: '(?i)\b(CP)\s+({{label}})\b'
+      captures:
+        1: keyword.control.z80
+        2: variable.parameter.z80
+
+    # ************************************
+    # *** Adding instructions (8 bits) ***
+    # ************************************
+
+    - match: '(?i)\b(ADD|ADC)\s+({{regs8}})\b'
+      captures:
+        1: keyword.control.z80
+        2: variable.other.z80
+
+    - match: '(?i)\b(ADD|ADC)\s+({{reg_ptr_hl}})\b'
+      captures:
+        1: keyword.control.z80
+        2: variable.other.z80
+        3: variable.parameter.z80
+
+    - match: '(?i)\b(ADD|ADC)\s+({{number}})\b'
+      captures:
+        1: keyword.control.z80
+        2: constant.numeric.z80
+
+    - match: '(?i)\b(ADD|ADC)\s+({{label}})\b'
+      captures:
+        1: keyword.control.z80
+        2: variable.function.z80
+
+    - match: '(?i)\b(ADD|ADC)\s+(A){{comma}}({{regs8}})\b'
+      captures:
+        1: keyword.control.z80
+        2: variable.other.z80
+        3: variable.other.z80
+
+    - match: '(?i)\b(ADD|ADC)\s+(A){{comma}}({{reg_ptr_hl}})\b'
+      captures:
+        1: keyword.control.z80
+        2: variable.other.z80
+        3: variable.parameter.z80
+
+    - match: '(?i)\b(ADD|ADC)\s+(A){{comma}}({{number}})\b'
+      captures:
+        1: keyword.control.z80
+        2: variable.other.z80
+        3: constant.numeric.z80
+
+    - match: '(?i)\b(ADD|ADC)\s+(A){{comma}}({{label}})\b'
+      captures:
+        1: keyword.control.z80
+        2: variable.other.z80
         3: variable.function.z80
 
-    - match: '(?i)\b(MLT|ADC|ADD|BIT|CCF|CP|CPL|CPD|CPDR|CPI|CPIR|DAA|DEC|DI|DJNZ|EI|EX|EXX|HALT|SLP|IM|IN|INC|IND|INDR|INF|INI|INIR|IN0|NEG|NOP|EXX|OR|OTDR|OTIR|OUT|OUTD|OUTI|OUT0|POP|PUSH|RES|RETI|RETN|RL|RLA|RLC|RLCA|RLD|RR|RRA|RRC|RRCA|RRD|SBC|SCF|SET|SLA|SLI|SLL|SRA|SRL|SUB)\b'
+    #
+    # Substracting instructions (8 bits)
+
+    - match: '(?i)\b(SUB|SBC)\s+({{regs8}})\b'
+      captures:
+        1: keyword.control.z80
+        2: variable.other.z80
+
+    - match: '(?i)\b(SUB|SBC)\s+({{reg_ptr_hl}})\b'
+      captures:
+        1: keyword.control.z80
+        2: variable.parameter.z80
+
+    - match: '(?i)\b(SUB|SBC)\s+({{number}})\b'
+      captures:
+        1: keyword.control.z80
+        2: constant.numeric.z80
+
+    - match: '(?i)\b(SUB|SBC)\s+({{label}})\b'
+      captures:
+        1: keyword.control.z80
+        2: variable.function.z80
+
+    - match: '(?i)\b(SUB|SBC)\s+(A){{comma}}({{regs8}})\b'
+      captures:
+        1: keyword.control.z80
+        2: variable.other.z80
+        3: variable.other.z80
+
+    - match: '(?i)\b(SUB|SBC)\s+(A){{comma}}({{reg_ptr_hl}})\b'
+      captures:
+        1: keyword.control.z80
+        2: variable.parameter.z80
+
+    - match: '(?i)\b(SUB|SBC)\s+(A){{comma}}({{number}})\b'
+      captures:
+        1: keyword.control.z80
+        2: variable.other.z80
+        3: constant.numeric.z80
+
+    - match: '(?i)\b(SUB|SBC)\s+(A){{comma}}({{label}})\b'
+      captures:
+        1: keyword.control.z80
+        2: variable.other.z80
+        3: variable.function.z80
+
+    # ********************************
+    # *** ALU operations (16 bits) ***
+    # ********************************
+
+    - match: '(?i)\b(ADD|ADC)\s+({{regs16}}){{comma}}({{regs16}})\b'
+      captures:
+        1: keyword.control.z80
+        2: variable.other.z80
+        3: variable.other.z80
+
+    - match: '(?i)\b(SUB|SBC)\s+({{regs16}}){{comma}}({{regs16}})\b'
+      captures:
+        1: keyword.control.z80
+        2: variable.other.z80
+        3: variable.other.z80
+
+    - match: '(?i)\b(MLT)\s+(?:(BC|DE|HL))\b'
+      captures:
+        1: keyword.control.z80
+        2: variable.other.z80
+
+    # Legacy Code
+
+    - match: '(?i)\b(BIT|CCF|CPL|CPD|CPDR|CPI|CPIR|DAA|DEC|DI|DJNZ|EI|EX|EXX|HALT|SLP|IM|IN|INC|IND|INDR|INF|INI|INIR|IN0|NEG|NOP|EXX|OR|OTDR|OTIR|OUT|OUTD|OUTI|OUT0|POP|PUSH|RES|RETI|RETN|RL|RLA|RLC|RLCA|RLD|RR|RRA|RRC|RRCA|RRD|SBC|SCF|SET|SLA|SLI|SLL|SRA|SRL|SUB)\b'
       scope: keyword.control.z80
 
     - match: '(?i)\b(LD|LDD|LDDR|LDI|LDIR)\b'
       scope: keyword.control.z80
+
+  # **************************
+  # *** Logical operations ***
+  # **************************
 
   operators:
     
@@ -138,6 +345,10 @@ contexts:
 
     - match: '(?i)(^|\s+)(DEFGROUP|IRP|REPT|ENDR|EXITM|ENDM|MEND|ENDIF)'
       scope: keyword.control.z80
+
+  # *******************************
+  # *** Preprocessor operations ***
+  # *******************************
 
   directives:
     
@@ -169,7 +380,7 @@ contexts:
       captures:
         1: variable.parameter.z80
         2: keyword.control.z80
-        3: constant.numeric
+        3: constant.numeric.z80
         4: comment.line.z80
 
   directives_data:
